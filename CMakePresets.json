@@ -1,0 +1,47 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux-qt5-debug",
+      "displayName": "Linux Qt5 Debug",
+      "description": "Debug build matching the documented Linux/CI path: Qt 5, Ninja, and external C++ dependencies from libs/deps/built unless overridden with NKR_LIBS.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-qt5-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "QT_VERSION_MAJOR": "5",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug-no-external",
+      "displayName": "Debug without optional C++ externals",
+      "description": "Reduced local Debug configuration for source analysis when optional C++ dependencies are unavailable. Requires Qt development packages to be available via CMAKE_PREFIX_PATH or Qt5_DIR/Qt6_DIR.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug-no-external",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "QT_VERSION_MAJOR": "5",
+        "NKR_NO_EXTERNAL": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-qt5-debug",
+      "configurePreset": "linux-qt5-debug",
+      "jobs": 0
+    },
+    {
+      "name": "debug-no-external",
+      "configurePreset": "debug-no-external",
+      "jobs": 0
+    }
+  ]
+}
