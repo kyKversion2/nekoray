@@ -321,10 +321,10 @@ if (BUILD_TESTING)
     target_include_directories(test_xray_core_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(test_xray_core_runner PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
     set_property(TARGET test_xray_core_runner PROPERTY AUTOMOC ON)
+    add_dependencies(test_xray_core_runner fake_xray)
 
     add_test(NAME xray_core_runner COMMAND test_xray_core_runner)
     set_tests_properties(xray_core_runner PROPERTIES
             ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
-            DEPENDS fake_xray
     )
 endif ()

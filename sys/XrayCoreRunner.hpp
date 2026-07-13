@@ -14,6 +14,9 @@ public:
         int exitCode = -1;
         QProcess::ExitStatus exitStatus = QProcess::NormalExit;
         QString startError;
+        QProcess::ProcessError processError = QProcess::UnknownError;
+        QString processErrorString;
+        QString terminationError;
         bool timedOut = false;
         bool started = false;
         QProcess::ProcessState finalState = QProcess::NotRunning;

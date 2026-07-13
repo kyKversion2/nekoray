@@ -51,7 +51,9 @@ XrayCoreRunner::RunResult XrayCoreRunner::run(const QStringList &arguments, int 
         process.terminate();
         if (!process.waitForFinished(1000)) {
             process.kill();
-            process.waitForFinished(1000);
+            if (!process.waitForFinished(1000)) {
+                result.terminationError = QStringLiteral("Xray process did not stop after terminate and kill");
+            }
         }
     }
 
@@ -60,8 +62,10 @@ XrayCoreRunner::RunResult XrayCoreRunner::run(const QStringList &arguments, int 
     result.exitCode = process.exitCode();
     result.exitStatus = process.exitStatus();
     result.finalState = process.state();
-    if (process.error() != QProcess::UnknownError && result.startError.isEmpty()) {
-        result.startError = process.errorString();
+    result.processError = process.error();
+    result.processErrorString = process.errorString();
+    if (result.terminationError.isEmpty() && result.finalState != QProcess::NotRunning) {
+        result.terminationError = QStringLiteral("Xray process is still running after timeout cleanup");
     }
     return result;
 }

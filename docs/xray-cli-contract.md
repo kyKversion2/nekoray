@@ -67,7 +67,7 @@ The runner must:
 - keep stdout and stderr separate;
 - preserve the raw stdout/stderr bytes;
 - report `exitCode`, `exitStatus`, startup error text, and timeout status;
-- on timeout, call `terminate()`, wait briefly, then call `kill()` if the child is still running.
+- on timeout, call `terminate()`, wait briefly, then call `kill()` if the child is still running; callers must inspect the final process state and termination error because cleanup failure is reported instead of being assumed impossible.
 
 ## Differences from old Nekoray Xray/v2ray integration
 

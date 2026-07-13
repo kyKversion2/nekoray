@@ -3,6 +3,7 @@
 #include <QtTest>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 using NekoGui_sys::XrayCoreRunner;
@@ -33,6 +34,7 @@ void TestXrayCoreRunner::version() {
     XrayCoreRunner runner(fakePath());
     const auto result = runner.getVersion(3000);
     QVERIFY(result.started);
+    QVERIFY(result.startError.isEmpty());
     QCOMPARE(result.exitCode, 0);
     QVERIFY(result.stderrData.isEmpty());
     QVERIFY(result.stdoutData.contains("Penetrates Everything"));
@@ -48,6 +50,8 @@ void TestXrayCoreRunner::configChecks() {
     QVERIFY(ok.stderrData.contains("stderr notice"));
 
     auto bad = runner.testConfig(fixture("invalid config.json"), 3000);
+    QVERIFY(bad.started);
+    QVERIFY(bad.startError.isEmpty());
     QVERIFY(bad.exitCode != 0);
     QVERIFY(bad.stdoutData.contains("checking config"));
     QVERIFY(bad.stderrData.contains("invalid character"));
@@ -56,22 +60,42 @@ void TestXrayCoreRunner::configChecks() {
 void TestXrayCoreRunner::timeout() {
     XrayCoreRunner runner(fakePath());
     const auto result = runner.run({"--hang"}, 200);
-    QVERIFY(result.timedOut);
     QVERIFY(result.started);
+    QVERIFY(result.timedOut);
+    QVERIFY(result.startError.isEmpty());
     QVERIFY(result.exitCode != 0 || result.exitStatus == QProcess::CrashExit);
     QCOMPARE(result.finalState, QProcess::NotRunning);
+    QVERIFY(result.terminationError.isEmpty());
 }
 
 void TestXrayCoreRunner::spacesInPaths() {
     QTemporaryDir tempDir(QDir::tempPath() + "/xray runner spaces.XXXXXX");
     QVERIFY(tempDir.isValid());
+
+    const QFileInfo sourceInfo(fakePath());
+    const QString copiedBinary = tempDir.path() + QDir::separator() + sourceInfo.fileName();
+    QVERIFY(QFile::copy(sourceInfo.absoluteFilePath(), copiedBinary));
+    QFile::setPermissions(copiedBinary, QFile::permissions(sourceInfo.absoluteFilePath()));
+
+    const QFileInfo copiedInfo(copiedBinary);
+    QVERIFY(copiedInfo.exists());
+    if (!copiedInfo.isExecutable()) {
+        QVERIFY(QFile::setPermissions(copiedBinary, QFile::permissions(copiedBinary) | QFileDevice::ExeOwner));
+    }
+    QVERIFY(QFileInfo(copiedBinary).isExecutable());
+    QVERIFY(copiedBinary.contains(' '));
+
     const QString config = tempDir.path() + "/safe config.json";
+    QVERIFY(config.contains(' '));
     QFile f(config);
     QVERIFY(f.open(QIODevice::WriteOnly));
     f.write("{\"log\":{\"loglevel\":\"warning\"}}");
     f.close();
-    XrayCoreRunner runner(fakePath());
+
+    XrayCoreRunner runner(copiedBinary);
     const auto result = runner.testConfig(config, 3000);
+    QVERIFY(result.started);
+    QVERIFY(result.startError.isEmpty());
     QCOMPARE(result.exitCode, 0);
 }
 
