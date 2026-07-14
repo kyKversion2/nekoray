@@ -6,6 +6,7 @@
 #include "fmt/Preset.hpp"
 #include "db/ConfigBuilder.hpp"
 #include "db/Database.hpp"
+#include "sys/XrayRawProfile.hpp"
 
 #include <QMessageBox>
 #include <QClipboard>
@@ -56,6 +57,16 @@ void EditCustom::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
             "    \"inbounds\": [],\n"
             "    \"outbounds\": []\n"
             "}");
+    } else if (preset_core == NekoGui_sys::XrayRawProfileCoreId) {
+        preset_command = "";
+        preset_config = "{\n"
+                        "  \"log\": {\n"
+                        "    \"loglevel\": \"warning\"\n"
+                        "  },\n"
+                        "  \"inbounds\": [],\n"
+                        "  \"outbounds\": []\n"
+                        "}";
+        ui->config_simple->setPlaceholderText(preset_config);
     }
 
     // load core ui
@@ -78,10 +89,14 @@ void EditCustom::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     }
 
     // custom internal
-    if (preset_core == "internal" || preset_core == "internal-full") {
+    if (preset_core == "internal" || preset_core == "internal-full" || preset_core == NekoGui_sys::XrayRawProfileCoreId) {
         ui->core->hide();
         if (preset_core == "internal") {
             ui->core_l->setText(tr("Outbound JSON, please read the documentation."));
+        } else if (preset_core == NekoGui_sys::XrayRawProfileCoreId) {
+            ui->core_l->setText(tr("Complete Xray JSON config."));
+            ui->preview->hide();
+            ui->as_json->hide();
         } else {
             ui->core_l->setText(tr("Please fill the complete config."));
         }
@@ -132,6 +147,7 @@ bool EditCustom::onEnd() {
         MessageBoxWarning(software_name, tr("Name cannot be empty."));
         return false;
     }
+    if (preset_core == NekoGui_sys::XrayRawProfileCoreId) ui->core->setCurrentText(NekoGui_sys::XrayRawProfileCoreId);
     if (ui->core->currentText().isEmpty()) {
         MessageBoxWarning(software_name, tr("Please pick a core."));
         return false;

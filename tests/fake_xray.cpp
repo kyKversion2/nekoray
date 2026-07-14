@@ -43,6 +43,8 @@ int main(int argc, char **argv) {
         }
         const auto data = f.readAll();
         out << "runtime ready\n";
+        if (data.contains("\"futureUnknownField\":{\"nested\":[1,2,3]}")) out << "raw field preserved\n";
+        if (data.contains("print-config-path-for-test")) out << "config path: " << args.at(configIndex + 1) << "\n";
         out.flush();
         err << "runtime stderr\n";
         err.flush();

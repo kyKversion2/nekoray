@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fmt/AbstractBean.hpp"
+#include "sys/XrayRawProfile.hpp"
 
 namespace NekoGui_fmt {
     class CustomBean : public AbstractBean {
@@ -27,6 +28,8 @@ namespace NekoGui_fmt {
                 return obj["type"].toString();
             } else if (core == "internal-full") {
                 return software_core_name + " config";
+            } else if (core == NekoGui_sys::XrayRawProfileCoreId) {
+                return QStringLiteral("Xray raw config");
             }
             return core;
         };

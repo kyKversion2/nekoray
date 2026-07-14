@@ -25,6 +25,7 @@
 
 namespace NekoGui_sys {
     class CoreProcess;
+    class XrayProfileSession;
 }
 
 QT_BEGIN_NAMESPACE
@@ -150,6 +151,7 @@ private:
     QString title_error;
     int icon_status = -1;
     std::shared_ptr<NekoGui::ProxyEntity> running;
+    NekoGui_sys::XrayProfileSession *xray_profile_session = nullptr;
     QString traffic_update_cache;
     QTime last_test_time;
     //

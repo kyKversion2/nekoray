@@ -12,6 +12,7 @@
 
 #include "fmt/includes.h"
 #include "fmt/Preset.hpp"
+#include "sys/XrayRawProfile.hpp"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
 #include "main/GuiUtils.hpp"
@@ -118,6 +119,7 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
         LOAD_TYPE("tuic")
         ui->type->addItem(tr("Custom (%1 outbound)").arg(software_core_name), "internal");
         ui->type->addItem(tr("Custom (%1 config)").arg(software_core_name), "internal-full");
+        ui->type->addItem(tr("Xray raw config"), NekoGui_sys::XrayRawProfileCoreId);
         ui->type->addItem(tr("Custom (Extra Core)"), "custom");
         LOAD_TYPE("chain")
 
@@ -175,7 +177,7 @@ void DialogEditProfile::typeSelected(const QString &newType) {
         auto _innerWidget = new EditQUIC(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-    } else if (type == "custom" || type == "internal" || type == "internal-full") {
+    } else if (type == "custom" || type == "internal" || type == "internal-full" || type == NekoGui_sys::XrayRawProfileCoreId) {
         auto _innerWidget = new EditCustom(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
@@ -197,7 +199,7 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     }
 
     // hide some widget
-    auto showAddressPort = type != "chain" && customType != "internal" && customType != "internal-full";
+    auto showAddressPort = type != "chain" && customType != "internal" && customType != "internal-full" && customType != NekoGui_sys::XrayRawProfileCoreId;
     ui->address->setVisible(showAddressPort);
     ui->address_l->setVisible(showAddressPort);
     ui->port->setVisible(showAddressPort);
@@ -241,7 +243,7 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     } else if (type == "custom") {
         if (customType == "internal") {
             show_custom_outbound = false;
-        } else if (customType == "internal-full") {
+        } else if (customType == "internal-full" || customType == NekoGui_sys::XrayRawProfileCoreId) {
             show_custom_outbound = false;
             show_custom_config = false;
         }

@@ -6,6 +6,9 @@
 #include "db/traffic/TrafficLooper.hpp"
 #include "rpc/gRPC.h"
 #include "ui/widget/MessageBoxTimer.h"
+#include "sys/XrayRawProfile.hpp"
+#include "fmt/CustomBean.hpp"
+#include "sys/XrayProfileSession.hpp"
 
 #include <QTimer>
 #include <QThread>
@@ -149,6 +152,16 @@ void MainWindow::speedtest_current_group(int mode, bool test_group) {
                     lock_write.unlock();
 
                     //
+                    if (NekoGui_sys::IsXrayRawProfile(profile)) {
+                        profile->full_test_report = QStringLiteral("Raw Xray profile speed tests are not supported yet.");
+                        profile->latency = -1;
+                        profile->Save();
+                        auto profileId = profile->id;
+                        runOnUiThread([this, profileId] { refresh_proxy_list(profileId); });
+                        MW_show_log(tr("[%1] test skipped: Raw Xray profile speed tests are not supported yet.").arg(profile->bean->DisplayTypeAndName()));
+                        continue;
+                    }
+
                     libcore::TestReq req;
                     req.set_mode((libcore::TestMode) mode);
                     req.set_timeout(10 * 1000);
@@ -299,6 +312,95 @@ void MainWindow::neko_start(int _id) {
     auto group = NekoGui::profileManager->GetGroup(ent->gid);
     if (group == nullptr || group->archive) return;
 
+    const bool isXrayRaw = NekoGui_sys::IsXrayRawProfile(ent);
+    if (isXrayRaw) {
+        if (NekoGui::dataStore->spmode_vpn || NekoGui::dataStore->spmode_system_proxy) {
+            MessageBoxWarning(software_name, tr("Raw Xray profile does not support Nekoray TUN/system proxy integration yet."));
+            return;
+        }
+
+        if (!mu_starting.tryLock()) {
+            MessageBoxWarning(software_name, "Another profile is starting...");
+            return;
+        }
+        if (!mu_stopping.tryLock()) {
+            MessageBoxWarning(software_name, "Another profile is stopping...");
+            mu_starting.unlock();
+            return;
+        }
+        mu_stopping.unlock();
+
+        runOnNewThread([=] {
+            if (NekoGui::dataStore->started_id >= 0) {
+                runOnUiThread([=] { neko_stop(false, true); });
+                sem_stopped.acquire();
+            }
+
+            MW_show_log(">>>>>>>> " + tr("Starting Xray raw profile %1").arg(ent->bean->DisplayTypeAndName()));
+            const QString binaryPath = NekoGui::dataStore->extraCore->Get("xray");
+            if (binaryPath.trimmed().isEmpty()) {
+                runOnUiThread([=] { MessageBoxWarning(software_name, tr("Xray binary path is empty. Configure Extra Core 'xray' first.")); });
+                MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->bean->DisplayTypeAndName()));
+                mu_starting.unlock();
+                return;
+            }
+
+            QSemaphore startSem;
+            bool ok = false;
+            QString error;
+            runOnUiThread([&] {
+                if (xray_profile_session != nullptr) {
+                    xray_profile_session->stop();
+                    delete xray_profile_session;
+                    xray_profile_session = nullptr;
+                }
+                auto session = new NekoGui_sys::XrayProfileSession(binaryPath);
+                xray_profile_session = session;
+                connect(session, &NekoGui_sys::XrayProfileSession::stdoutReceived, this, [](const QByteArray &data) {
+                    MW_show_log_ext("Xray", QString::fromUtf8(data).trimmed());
+                }, Qt::QueuedConnection);
+                connect(session, &NekoGui_sys::XrayProfileSession::stderrReceived, this, [](const QByteArray &data) {
+                    MW_show_log_ext("Xray stderr", QString::fromUtf8(data).trimmed());
+                }, Qt::QueuedConnection);
+                connect(session, &NekoGui_sys::XrayProfileSession::crashed, this, [=](int exitCode, QProcess::ExitStatus exitStatus) {
+                    if (xray_profile_session != session) return;
+                    MW_show_log(QStringLiteral("[Xray] crashed: exitCode=%1 exitStatus=%2").arg(exitCode).arg(exitStatus));
+                    xray_profile_session = nullptr;
+                    session->deleteLater();
+                    const int oldId = NekoGui::dataStore->started_id;
+                    NekoGui::dataStore->UpdateStartedId(-1919);
+                    running = nullptr;
+                    refresh_status();
+                    refresh_proxy_list(oldId);
+                }, Qt::QueuedConnection);
+                auto r = session->start(ent->CustomBean()->config_simple.toUtf8());
+                ok = r.ok;
+                error = r.error;
+                if (!ok) {
+                    delete session;
+                    if (xray_profile_session == session) xray_profile_session = nullptr;
+                }
+                startSem.release();
+            }, DS_cores);
+            startSem.acquire();
+            if (!ok) {
+                runOnUiThread([=] { MessageBoxWarning(tr("Xray start error"), error); });
+                MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->bean->DisplayTypeAndName()));
+                mu_starting.unlock();
+                return;
+            }
+
+            NekoGui::dataStore->UpdateStartedId(ent->id);
+            running = ent;
+            runOnUiThread([=] {
+                refresh_status();
+                refresh_proxy_list(ent->id);
+            });
+            mu_starting.unlock();
+        });
+        return;
+    }
+
     auto result = BuildConfig(ent, false, false);
     if (!result->error.isEmpty()) {
         MessageBoxWarning("BuildConfig return error", result->error);
@@ -409,6 +511,40 @@ void MainWindow::neko_stop(bool crash, bool sem) {
     auto id = NekoGui::dataStore->started_id;
     if (id < 0) {
         if (sem) sem_stopped.release();
+        return;
+    }
+
+    if (running != nullptr && NekoGui_sys::IsXrayRawProfile(running)) {
+        if (!mu_stopping.tryLock()) {
+            if (sem) sem_stopped.release();
+            return;
+        }
+        runOnNewThread([=] {
+            MW_show_log(">>>>>>>> " + tr("Stopping profile %1").arg(running->bean->DisplayTypeAndName()));
+            QSemaphore stopSem;
+            bool ok = true;
+            QString error;
+            runOnUiThread([&] {
+                if (xray_profile_session != nullptr) {
+                    auto result = xray_profile_session->stop();
+                    ok = result.ok;
+                    error = result.error;
+                    delete xray_profile_session;
+                    xray_profile_session = nullptr;
+                }
+                stopSem.release();
+            }, DS_cores);
+            stopSem.acquire();
+            if (!ok) MW_show_log("<<<<<<<< " + tr("Failed to stop Xray profile: %1").arg(error));
+            NekoGui::dataStore->UpdateStartedId(-1919);
+            running = nullptr;
+            runOnUiThread([=] {
+                refresh_status();
+                refresh_proxy_list(id);
+            });
+            mu_stopping.unlock();
+            if (sem) sem_stopped.release();
+        });
         return;
     }
 
