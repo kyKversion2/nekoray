@@ -50,6 +50,8 @@ int main(int argc, char **argv) {
 #ifdef Q_OS_UNIX
         if (data.contains("ignore-terminate")) {
             std::signal(SIGTERM, SIG_IGN);
+            out << "ignore terminate active\n";
+            out.flush();
         }
 #endif
         while (true) QThread::sleep(1);

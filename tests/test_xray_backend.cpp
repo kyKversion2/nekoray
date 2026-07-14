@@ -37,6 +37,12 @@ static bool isProcessAlive(qint64 pid) {
 #endif
 }
 
+static QByteArray combinedSignalData(const QSignalSpy &spy) {
+    QByteArray combined;
+    for (const auto &args : spy) combined += args.at(0).toByteArray();
+    return combined;
+}
+
 class TestXrayBackend : public QObject {
     Q_OBJECT
 private:
@@ -202,7 +208,11 @@ void TestXrayBackend::forcedKillFallback() {
     const QString config = writeConfig(dir, "ignore terminate.json", "{\"mode\":\"ignore-terminate\"}");
     QVERIFY(!config.isEmpty());
     XrayBackend backend(fakePath());
+    QSignalSpy stdoutSpy(&backend, &XrayBackend::stdoutReceived);
     QVERIFY(backend.start(config).ok);
+    // The marker confirms SIGTERM is ignored before stop(), so a successful stop
+    // exercises the forced-kill fallback.
+    QTRY_VERIFY_WITH_TIMEOUT(combinedSignalData(stdoutSpy).contains("ignore terminate active"), 3000);
     QVERIFY(backend.isRunning());
     const qint64 pid = backend.processId();
     QVERIFY(pid > 0);
