@@ -20,6 +20,10 @@ if (NOT QT_VERSION_MAJOR)
     set(QT_VERSION_MAJOR 5)
 endif ()
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network Svg LinguistTools)
+if (BUILD_TESTING)
+    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test)
+    enable_testing()
+endif ()
 
 if (NKR_CROSS)
     set_property(TARGET Qt5::moc PROPERTY IMPORTED_LOCATION /usr/bin/moc)
@@ -158,6 +162,7 @@ set(PROJECT_SOURCES
         sub/GroupUpdater.cpp
 
         sys/ExternalProcess.cpp
+        sys/XrayCoreRunner.cpp
         sys/AutoRun.cpp
 
         ui/ThemeManager.cpp
@@ -299,4 +304,27 @@ target_link_libraries(nekobox PRIVATE
 
 if (QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(nekobox)
+endif ()
+
+if (BUILD_TESTING)
+    set(XRAY_TEST_FIXTURE_DIR ${CMAKE_CURRENT_BINARY_DIR}/tests/fixtures)
+    file(COPY tests/fixtures DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tests)
+
+    add_executable(fake_xray tests/fake_xray.cpp)
+    target_link_libraries(fake_xray PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+    set_property(TARGET fake_xray PROPERTY AUTOMOC ON)
+
+    add_executable(test_xray_core_runner
+            tests/test_xray_core_runner.cpp
+            sys/XrayCoreRunner.cpp
+    )
+    target_include_directories(test_xray_core_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_xray_core_runner PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
+    set_property(TARGET test_xray_core_runner PROPERTY AUTOMOC ON)
+    add_dependencies(test_xray_core_runner fake_xray)
+
+    add_test(NAME xray_core_runner COMMAND test_xray_core_runner)
+    set_tests_properties(xray_core_runner PROPERTIES
+            ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
+    )
 endif ()
