@@ -3,11 +3,39 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
+#ifdef Q_OS_UNIX
+#include <cerrno>
+#include <csignal>
+#endif
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 using NekoGui_sys::XrayBackend;
+
+static bool isProcessAlive(qint64 pid) {
+    if (pid <= 0) return false;
+#ifdef Q_OS_UNIX
+    if (::kill(static_cast<pid_t>(pid), 0) == 0) return true;
+    return errno == EPERM;
+#elif defined(Q_OS_WIN)
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (process == nullptr) return false;
+    DWORD exitCode = 0;
+    const bool alive = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return alive;
+#else
+    Q_UNUSED(pid);
+    return false;
+#endif
+}
 
 class TestXrayBackend : public QObject {
     Q_OBJECT
@@ -19,8 +47,8 @@ private:
         const QString path = QDir(dir.path()).filePath(name);
         QFile f(path);
         QDir().mkpath(QFileInfo(path).path());
-        Q_ASSERT(f.open(QIODevice::WriteOnly));
-        Q_ASSERT(f.write(data) == qint64(data.size()));
+        if (!f.open(QIODevice::WriteOnly)) return {};
+        if (f.write(data) != qint64(data.size())) return {};
         return path;
     }
 
@@ -31,10 +59,12 @@ private slots:
     void invalidConfigDoesNotStart();
     void validConfigStartsAndStops();
     void secondStartRejected();
+    void reentrantStartRejected();
     void stdoutDelivery();
     void stderrDelivery();
     void crashDetection();
     void destructorCleanup();
+    void forcedKillFallback();
     void spacesInPaths();
     void restartCycle();
 };
@@ -87,8 +117,33 @@ void TestXrayBackend::secondStartRejected() {
     QVERIFY(backend.start(fixture("valid config.json")).ok);
     auto second = backend.start(fixture("valid config.json"));
     QVERIFY(!second.ok);
-    QCOMPARE(second.error, QStringLiteral("Xray backend is already running"));
+    QCOMPARE(second.error, QStringLiteral("Xray backend process is already running"));
     QVERIFY(backend.stop().ok);
+}
+
+
+void TestXrayBackend::reentrantStartRejected() {
+    XrayBackend backend(fakePath());
+    QSignalSpy started(&backend, &XrayBackend::started);
+    bool attempted = false;
+    XrayBackend::OperationResult second;
+    connect(&backend, &XrayBackend::stateChanged, this, [&](XrayBackend::State state) {
+        if (state == XrayBackend::State::Validating && !attempted) {
+            attempted = true;
+            second = backend.start(fixture("valid config.json"));
+        }
+    });
+
+    auto first = backend.start(fixture("valid config.json"));
+    QVERIFY(attempted);
+    QVERIFY(!second.ok);
+    QCOMPARE(second.error, QStringLiteral("Xray backend cannot start from current lifecycle state"));
+    QVERIFY(first.ok);
+    if (started.isEmpty()) QVERIFY(started.wait(1000));
+    QVERIFY(backend.isRunning());
+    QVERIFY(backend.processId() > 0);
+    QVERIFY(backend.stop().ok);
+    QVERIFY(!backend.isRunning());
 }
 
 void TestXrayBackend::stdoutDelivery() {
@@ -116,6 +171,7 @@ void TestXrayBackend::stderrDelivery() {
 void TestXrayBackend::crashDetection() {
     QTemporaryDir dir;
     const QString config = writeConfig(dir, "crash.json", "{\"mode\":\"crash\"}");
+    QVERIFY(!config.isEmpty());
     XrayBackend backend(fakePath());
     QSignalSpy crashed(&backend, &XrayBackend::crashed);
     QVERIFY(backend.start(config).ok);
@@ -135,16 +191,41 @@ void TestXrayBackend::destructorCleanup() {
         delete backend;
     }
     QVERIFY(pid > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(!isProcessAlive(pid), 3000);
+}
+
+void TestXrayBackend::forcedKillFallback() {
+#ifndef Q_OS_UNIX
+    QSKIP("forced SIGTERM ignore behavior is implemented only for Unix test environments");
+#else
+    QTemporaryDir dir;
+    const QString config = writeConfig(dir, "ignore terminate.json", "{\"mode\":\"ignore-terminate\"}");
+    QVERIFY(!config.isEmpty());
+    XrayBackend backend(fakePath());
+    QVERIFY(backend.start(config).ok);
+    QVERIFY(backend.isRunning());
+    const qint64 pid = backend.processId();
+    QVERIFY(pid > 0);
+    auto stop = backend.stop(200, 2000);
+    QVERIFY(stop.ok);
+    QVERIFY(!backend.isRunning());
+    QCOMPARE(backend.state(), XrayBackend::State::Stopped);
+    QTRY_VERIFY_WITH_TIMEOUT(!isProcessAlive(pid), 3000);
+#endif
 }
 
 void TestXrayBackend::spacesInPaths() {
     QTemporaryDir dir;
     const QString binaryDir = QDir(dir.path()).filePath("bin with spaces");
     QVERIFY(QDir().mkpath(binaryDir));
-    const QString copiedBinary = QDir(binaryDir).filePath("fake xray");
+    const QFileInfo sourceInfo(fakePath());
+    const QString copiedBinary = QDir(binaryDir).filePath(sourceInfo.fileName());
     QVERIFY(QFile::copy(fakePath(), copiedBinary));
     QVERIFY(QFile::setPermissions(copiedBinary, QFile::permissions(copiedBinary) | QFileDevice::ExeOwner | QFileDevice::ExeUser | QFileDevice::ExeGroup | QFileDevice::ExeOther));
     const QString config = writeConfig(dir, "config with spaces/valid config.json", "{}");
+    QVERIFY(!config.isEmpty());
+    QVERIFY(QFileInfo(copiedBinary).path().contains(' '));
+    QVERIFY(config.contains(' '));
     XrayBackend backend(copiedBinary);
     QVERIFY(backend.start(config).ok);
     QVERIFY(backend.isRunning());

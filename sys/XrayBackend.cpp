@@ -52,8 +52,12 @@ XrayBackend::OperationResult XrayBackend::validateConfig(const QString &configPa
 }
 
 XrayBackend::OperationResult XrayBackend::start(const QString &configPath, int validationTimeoutMs) {
-    if (process_.state() != QProcess::NotRunning || state_ == State::Running || state_ == State::Starting || state_ == State::Stopping) {
-        lastStartError_ = QStringLiteral("Xray backend is already running");
+    if (process_.state() != QProcess::NotRunning) {
+        lastStartError_ = QStringLiteral("Xray backend process is already running");
+        return makeError(lastStartError_);
+    }
+    if (state_ != State::Stopped && state_ != State::Crashed) {
+        lastStartError_ = QStringLiteral("Xray backend cannot start from current lifecycle state");
         return makeError(lastStartError_);
     }
 

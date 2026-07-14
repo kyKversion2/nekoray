@@ -3,6 +3,10 @@
 #include <QTextStream>
 #include <QThread>
 
+#ifdef Q_OS_UNIX
+#include <csignal>
+#endif
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     const QStringList args = app.arguments().mid(1);
@@ -43,6 +47,11 @@ int main(int argc, char **argv) {
         err << "runtime stderr\n";
         err.flush();
         if (data.contains("crash")) return 42;
+#ifdef Q_OS_UNIX
+        if (data.contains("ignore-terminate")) {
+            std::signal(SIGTERM, SIG_IGN);
+        }
+#endif
         while (true) QThread::sleep(1);
     }
     err << "unknown arguments: " << args.join(' ') << "\n";
