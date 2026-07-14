@@ -31,6 +31,20 @@ int main(int argc, char **argv) {
         err << "stderr notice\n";
         return 0;
     }
+    if (args.size() >= 3 && args.at(0) == "run" && configIndex >= 0 && configIndex + 1 < args.size()) {
+        QFile f(args.at(configIndex + 1));
+        if (!f.open(QIODevice::ReadOnly)) {
+            err << "failed to read config\n";
+            return 2;
+        }
+        const auto data = f.readAll();
+        out << "runtime ready\n";
+        out.flush();
+        err << "runtime stderr\n";
+        err.flush();
+        if (data.contains("crash")) return 42;
+        while (true) QThread::sleep(1);
+    }
     err << "unknown arguments: " << args.join(' ') << "\n";
     return 2;
 }

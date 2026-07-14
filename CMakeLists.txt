@@ -163,6 +163,7 @@ set(PROJECT_SOURCES
 
         sys/ExternalProcess.cpp
         sys/XrayCoreRunner.cpp
+        sys/XrayBackend.cpp
         sys/AutoRun.cpp
 
         ui/ThemeManager.cpp
@@ -325,6 +326,21 @@ if (BUILD_TESTING)
 
     add_test(NAME xray_core_runner COMMAND test_xray_core_runner)
     set_tests_properties(xray_core_runner PROPERTIES
+            ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
+    )
+
+    add_executable(test_xray_backend
+            tests/test_xray_backend.cpp
+            sys/XrayBackend.cpp
+            sys/XrayCoreRunner.cpp
+    )
+    target_include_directories(test_xray_backend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_xray_backend PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
+    set_property(TARGET test_xray_backend PROPERTY AUTOMOC ON)
+    add_dependencies(test_xray_backend fake_xray)
+
+    add_test(NAME xray_backend COMMAND test_xray_backend)
+    set_tests_properties(xray_backend PROPERTIES
             ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
     )
 endif ()
