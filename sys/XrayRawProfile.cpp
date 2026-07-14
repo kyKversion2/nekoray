@@ -12,8 +12,16 @@ bool IsXrayRawProfile(const std::shared_ptr<NekoGui::ProxyEntity> &ent) {
     return bean != nullptr && bean->core == XrayRawProfileCoreId;
 }
 
-bool ShouldCommitXrayStart(const void *currentSession, const void *candidateSession, int currentGeneration, int candidateGeneration, bool sessionRunning) {
-    return currentSession != nullptr && currentSession == candidateSession && currentGeneration == candidateGeneration && sessionRunning;
+bool IsCurrentXraySession(const QObject *currentSession, const QObject *candidateSession, int currentGeneration, int candidateGeneration) {
+    return currentSession != nullptr && currentSession == candidateSession && currentGeneration == candidateGeneration;
+}
+
+bool ShouldCommitXrayStart(const QObject *currentSession, const QObject *candidateSession, int currentGeneration, int candidateGeneration, bool sessionRunning) {
+    return IsCurrentXraySession(currentSession, candidateSession, currentGeneration, candidateGeneration) && sessionRunning;
+}
+
+bool ShouldCommitXrayStop(const QObject *currentSession, const QObject *candidateSession, int currentGeneration, int candidateGeneration, bool sessionRunning) {
+    return IsCurrentXraySession(currentSession, candidateSession, currentGeneration, candidateGeneration) && !sessionRunning;
 }
 
 } // namespace NekoGui_sys

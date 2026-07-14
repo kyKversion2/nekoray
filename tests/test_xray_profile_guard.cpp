@@ -6,16 +6,40 @@
 #include "sys/XrayRawProfile.hpp"
 
 #include <QApplication>
+#include <QDir>
 #include <QTest>
+#include <QTemporaryDir>
+
+#include <memory>
 
 class TestXrayProfileGuard : public QObject {
     Q_OBJECT
+private:
+    QString originalCurrentPath;
+    std::unique_ptr<QTemporaryDir> testDataDir;
+
 private slots:
     void initTestCase() {
+        originalCurrentPath = QDir::currentPath();
+        testDataDir = std::make_unique<QTemporaryDir>();
+        QVERIFY(testDataDir->isValid());
+        QVERIFY(QDir::setCurrent(testDataDir->path()));
+        QVERIFY(QDir().mkpath(QStringLiteral("groups")));
+        QVERIFY(QDir().mkpath(QStringLiteral("profiles")));
+
         NekoGui::dataStore = new NekoGui::DataStore();
+        NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
         NekoGui::profileManager = new NekoGui::ProfileManager();
         auto group = NekoGui::ProfileManager::NewGroup();
         QVERIFY(NekoGui::profileManager->AddGroup(group));
+    }
+    void cleanupTestCase() {
+        delete NekoGui::profileManager;
+        NekoGui::profileManager = nullptr;
+        delete NekoGui::dataStore;
+        NekoGui::dataStore = nullptr;
+        QVERIFY(QDir::setCurrent(originalCurrentPath));
+        testDataDir.reset();
     }
     void normalCustomNotXray() {
         auto ent = NekoGui::ProfileManager::NewProxyEntity("custom");
@@ -62,12 +86,25 @@ private slots:
     void staleCrashedStartCommitRejected() {
         int generation = 7;
         int otherGeneration = 8;
-        int session;
-        int otherSession;
+        QObject session;
+        QObject otherSession;
         QVERIFY(NekoGui_sys::ShouldCommitXrayStart(&session, &session, generation, generation, true));
         QVERIFY(!NekoGui_sys::ShouldCommitXrayStart(&session, &otherSession, generation, generation, true));
         QVERIFY(!NekoGui_sys::ShouldCommitXrayStart(&session, &session, generation, otherGeneration, true));
         QVERIFY(!NekoGui_sys::ShouldCommitXrayStart(&session, &session, generation, generation, false));
+    }
+    void stoppedCurrentSessionCommitsStoppedState() {
+        int generation = 7;
+        int otherGeneration = 8;
+        QObject session;
+        QObject otherSession;
+        QVERIFY(NekoGui_sys::IsCurrentXraySession(&session, &session, generation, generation));
+        QVERIFY(!NekoGui_sys::IsCurrentXraySession(&session, &otherSession, generation, generation));
+        QVERIFY(!NekoGui_sys::IsCurrentXraySession(&session, &session, generation, otherGeneration));
+        QVERIFY(NekoGui_sys::ShouldCommitXrayStop(&session, &session, generation, generation, false));
+        QVERIFY(!NekoGui_sys::ShouldCommitXrayStop(&session, &session, generation, generation, true));
+        QVERIFY(!NekoGui_sys::ShouldCommitXrayStop(&session, &otherSession, generation, generation, false));
+        QVERIFY(!NekoGui_sys::ShouldCommitXrayStop(&session, &session, generation, otherGeneration, false));
     }
     void ordinaryInternalFullStillBuilds() {
         auto ent = NekoGui::ProfileManager::NewProxyEntity("custom");

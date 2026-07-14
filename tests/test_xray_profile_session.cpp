@@ -31,7 +31,22 @@ private slots:
 #endif
         XrayProfileSession s(p); QVERIFY(s.start("{}").ok); QVERIFY(s.stop().ok); }
     void doubleStartPreservesActiveConfig() { XrayProfileSession s(fakePath()); QVERIFY(s.start("{}").ok); const QString p=s.configPathForTesting(); QVERIFY(QFileInfo(p).exists()); auto r=s.start("{\"n\":2}"); QVERIFY(!r.ok); QCOMPARE(s.configPathForTesting(), p); QVERIFY(QFileInfo(p).exists()); QVERIFY(s.stop().ok); }
-    void stopFailurePreservesConfigWhileRunning() { XrayProfileSession s(fakePath()); QVERIFY(s.start("{}").ok); const QString p=s.configPathForTesting(); auto r=s.stop(0,0); if (!r.ok && s.isRunning()) QVERIFY(QFileInfo(p).exists()); s.stop(3000,1000); }
+    void stopFailurePreservesConfigWhileRunning() {
+        XrayProfileSession s(fakePath());
+        QSignalSpy stopped(&s, &XrayProfileSession::stopped);
+        QVERIFY(s.start("{}").ok);
+        const QString p = s.configPathForTesting();
+        QVERIFY(QFileInfo(p).exists());
+
+        const auto result = s.stop(0, 0);
+        QVERIFY(!result.ok);
+        QVERIFY(s.isRunning());
+        QVERIFY(QFileInfo(p).exists());
+
+        if (stopped.isEmpty()) QVERIFY(stopped.wait(3000));
+        QVERIFY(!s.isRunning());
+        QVERIFY(!QFileInfo(p).exists());
+    }
     void tempExistsWhileActiveRemovedAfterStop() { XrayProfileSession s(fakePath()); QVERIFY(s.start("{}").ok); QString p=s.configPathForTesting(); QVERIFY(QFileInfo(p).exists()); QVERIFY(s.stop().ok); QVERIFY(!QFileInfo(p).exists()); }
     void immediateCrashCleanup() { XrayProfileSession s(fakePath()); QSignalSpy crash(&s,&XrayProfileSession::crashed); QVERIFY(s.start("{\"mode\":\"immediate-crash\"}").ok); QString p=s.configPathForTesting(); QVERIFY(crash.wait(3000)); QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo(p).exists(), 1000); }
     void restartAfterCrash() { XrayProfileSession s(fakePath()); QSignalSpy crash(&s,&XrayProfileSession::crashed); QVERIFY(s.start("{\"mode\":\"immediate-crash\"}").ok); QVERIFY(crash.wait(3000)); QVERIFY(s.start("{}").ok); QVERIFY(s.stop().ok); }

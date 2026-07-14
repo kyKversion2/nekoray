@@ -379,6 +379,17 @@ if (BUILD_TESTING)
     target_include_directories(test_xray_profile_guard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(test_xray_profile_guard PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Test ${PLATFORM_LIBRARIES})
     set_property(TARGET test_xray_profile_guard PROPERTY AUTOMOC ON)
+
+    # Build this test in an isolated runtime directory with the geo assets that
+    # BuildConfigSingBox requires to exist beside the application executable.
+    set(XRAY_PROFILE_GUARD_RUNTIME_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests/xray_profile_guard_runtime")
+    set_target_properties(test_xray_profile_guard PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${XRAY_PROFILE_GUARD_RUNTIME_DIR}"
+    )
+    file(MAKE_DIRECTORY "${XRAY_PROFILE_GUARD_RUNTIME_DIR}")
+    file(WRITE "${XRAY_PROFILE_GUARD_RUNTIME_DIR}/geoip.db" "")
+    file(WRITE "${XRAY_PROFILE_GUARD_RUNTIME_DIR}/geosite.db" "")
+
     add_test(NAME xray_profile_guard COMMAND test_xray_profile_guard)
     set_tests_properties(xray_profile_guard PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif ()

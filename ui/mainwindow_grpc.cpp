@@ -335,6 +335,11 @@ void MainWindow::neko_start(int _id) {
                 runOnUiThread([=] { neko_stop(false, true); });
                 sem_stopped.acquire();
             }
+            if (NekoGui::dataStore->started_id >= 0) {
+                MW_show_log("<<<<<<<< " + tr("Failed to start Xray raw profile because the current profile is still running."));
+                mu_starting.unlock();
+                return;
+            }
 
             MW_show_log(">>>>>>>> " + tr("Starting Xray raw profile %1").arg(ent->bean->DisplayTypeAndName()));
             const QString binaryPath = NekoGui::dataStore->extraCore->Get("xray");
@@ -352,9 +357,19 @@ void MainWindow::neko_start(int _id) {
             int startedGeneration = 0;
             runOnUiThread([&] {
                 if (xray_profile_session != nullptr) {
-                    xray_profile_session->stop();
-                    delete xray_profile_session;
+                    auto previousSession = xray_profile_session;
+                    const auto stopResult = previousSession->stop();
+                    if (previousSession->isRunning()) {
+                        error = stopResult.error.isEmpty() ? QStringLiteral("Existing Xray profile session is still running") : stopResult.error;
+                        startSem.release();
+                        return;
+                    }
+                    if (!stopResult.ok && !stopResult.error.isEmpty()) {
+                        MW_show_log("<<<<<<<< " + tr("Xray stop reported an error after the process exited: %1").arg(stopResult.error));
+                    }
                     xray_profile_session = nullptr;
+                    ++xray_profile_session_generation;
+                    delete previousSession;
                 }
                 auto session = new NekoGui_sys::XrayProfileSession(binaryPath);
                 const int sessionGeneration = ++xray_profile_session_generation;
@@ -366,8 +381,21 @@ void MainWindow::neko_start(int _id) {
                     MW_show_log_ext("Xray stderr", QString::fromUtf8(data).trimmed());
                 }, Qt::QueuedConnection);
                 connect(session, &NekoGui_sys::XrayProfileSession::crashed, this, [=](int exitCode, QProcess::ExitStatus exitStatus) {
-                    if (!NekoGui_sys::ShouldCommitXrayStart(xray_profile_session, session, xray_profile_session_generation, sessionGeneration, true)) return;
+                    if (!NekoGui_sys::IsCurrentXraySession(xray_profile_session, session, xray_profile_session_generation, sessionGeneration)) return;
                     MW_show_log(QStringLiteral("[Xray] crashed: exitCode=%1 exitStatus=%2").arg(exitCode).arg(exitStatus));
+                    xray_profile_session = nullptr;
+                    ++xray_profile_session_generation;
+                    session->deleteLater();
+                    const int oldId = NekoGui::dataStore->started_id;
+                    NekoGui::dataStore->UpdateStartedId(-1919);
+                    running = nullptr;
+                    refresh_status();
+                    refresh_proxy_list(oldId);
+                }, Qt::QueuedConnection);
+                connect(session, &NekoGui_sys::XrayProfileSession::stopped, this, [=](int exitCode, QProcess::ExitStatus exitStatus) {
+                    if (!NekoGui_sys::IsCurrentXraySession(xray_profile_session, session, xray_profile_session_generation, sessionGeneration)) return;
+                    if (!NekoGui_sys::ShouldCommitXrayStop(xray_profile_session, session, xray_profile_session_generation, sessionGeneration, session->isRunning())) return;
+                    MW_show_log(QStringLiteral("[Xray] stopped after a pending stop request: exitCode=%1 exitStatus=%2").arg(exitCode).arg(exitStatus));
                     xray_profile_session = nullptr;
                     ++xray_profile_session_generation;
                     session->deleteLater();
@@ -532,24 +560,42 @@ void MainWindow::neko_stop(bool crash, bool sem) {
         runOnNewThread([=] {
             MW_show_log(">>>>>>>> " + tr("Stopping profile %1").arg(running->bean->DisplayTypeAndName()));
             QSemaphore stopSem;
-            bool ok = true;
+            bool stoppedConfirmed = false;
             QString error;
             runOnUiThread([&] {
-                if (xray_profile_session != nullptr) {
-                    auto session = xray_profile_session;
+                if (xray_profile_session == nullptr) {
+                    error = QStringLiteral("Xray profile session is missing");
+                    stopSem.release();
+                    return;
+                }
+
+                auto session = xray_profile_session;
+                const int sessionGeneration = xray_profile_session_generation;
+                const auto result = session->stop();
+                const bool sessionRunning = session->isRunning();
+                stoppedConfirmed = NekoGui_sys::ShouldCommitXrayStop(
+                    xray_profile_session, session,
+                    xray_profile_session_generation, sessionGeneration,
+                    sessionRunning);
+                error = result.ok ? QString() : result.error;
+                if (stoppedConfirmed) {
+                    xray_profile_session = nullptr;
                     ++xray_profile_session_generation;
-                    auto result = session->stop();
-                    ok = result.ok;
-                    error = result.error;
-                    if (!session->isRunning()) {
-                        if (xray_profile_session == session) xray_profile_session = nullptr;
-                        delete session;
-                    }
+                    delete session;
                 }
                 stopSem.release();
             }, DS_cores);
             stopSem.acquire();
-            if (!ok) MW_show_log("<<<<<<<< " + tr("Failed to stop Xray profile: %1").arg(error));
+            if (!stoppedConfirmed) {
+                if (error.isEmpty()) error = QStringLiteral("Xray process is still running after stop");
+                MW_show_log("<<<<<<<< " + tr("Failed to stop Xray profile: %1").arg(error));
+                mu_stopping.unlock();
+                if (sem) sem_stopped.release();
+                return;
+            }
+            if (!error.isEmpty()) {
+                MW_show_log("<<<<<<<< " + tr("Xray stop reported an error after the process exited: %1").arg(error));
+            }
             NekoGui::dataStore->UpdateStartedId(-1919);
             running = nullptr;
             runOnUiThread([=] {
