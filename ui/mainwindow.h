@@ -152,6 +152,7 @@ private:
     int icon_status = -1;
     std::shared_ptr<NekoGui::ProxyEntity> running;
     NekoGui_sys::XrayProfileSession *xray_profile_session = nullptr;
+    int xray_profile_session_generation = 0;
     QString traffic_update_cache;
     QTime last_test_time;
     //

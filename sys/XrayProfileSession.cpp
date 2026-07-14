@@ -5,15 +5,20 @@
 #include <QJsonParseError>
 #include <QThread>
 
+#include <utility>
+
 namespace NekoGui_sys {
 
 XrayProfileSession::XrayProfileSession(QString binaryPath, QObject *parent)
-    : QObject(parent), binaryPath_(std::move(binaryPath)), backend_(new XrayBackend(binaryPath_, this)) {
+    : XrayProfileSession(std::move(binaryPath), QDir::tempPath() + QStringLiteral("/nekoray-xray-raw-XXXXXX.json"), parent) {}
+
+XrayProfileSession::XrayProfileSession(QString binaryPath, QString tempDirectoryTemplate, QObject *parent)
+    : QObject(parent), binaryPath_(std::move(binaryPath)), tempDirectoryTemplate_(std::move(tempDirectoryTemplate)), backend_(new XrayBackend(binaryPath_, this)) {
     connect(backend_.data(), &XrayBackend::stdoutReceived, this, &XrayProfileSession::stdoutReceived);
     connect(backend_.data(), &XrayBackend::stderrReceived, this, &XrayProfileSession::stderrReceived);
     connect(backend_.data(), &XrayBackend::started, this, &XrayProfileSession::started);
     connect(backend_.data(), &XrayBackend::stopped, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
-        cleanupTempFile();
+        if (!backend_->isRunning()) cleanupTempFile();
         emit stopped(exitCode, exitStatus);
     });
     connect(backend_.data(), &XrayBackend::crashed, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
@@ -29,6 +34,7 @@ XrayProfileSession::~XrayProfileSession() {
 
 XrayProfileSession::StartResult XrayProfileSession::start(const QByteArray &rawJsonUtf8, int validationTimeoutMs) {
     Q_ASSERT(thread() == QThread::currentThread());
+    if (backend_ && backend_->isRunning()) return {false, QStringLiteral("Xray profile session is already running"), {false, QStringLiteral("Xray profile session is already running"), {}}};
     if (binaryPath_.trimmed().isEmpty()) return makeError(QStringLiteral("Xray binary path is empty. Configure Extra Core 'xray' first."));
     if (rawJsonUtf8.trimmed().isEmpty()) return makeError(QStringLiteral("Raw Xray config is empty"));
 
@@ -40,7 +46,7 @@ XrayProfileSession::StartResult XrayProfileSession::start(const QByteArray &rawJ
     if (!doc.isObject()) return makeError(QStringLiteral("Raw Xray config JSON root must be an object"));
 
     cleanupTempFile();
-    configFile_.reset(new QTemporaryFile(QDir::tempPath() + QStringLiteral("/nekoray-xray-raw-XXXXXX.json")));
+    configFile_.reset(new QTemporaryFile(tempDirectoryTemplate_));
     configFile_->setAutoRemove(true);
     if (!configFile_->open()) {
         const auto error = configFile_->errorString();
@@ -52,7 +58,12 @@ XrayProfileSession::StartResult XrayProfileSession::start(const QByteArray &rawJ
         cleanupTempFile();
         return makeError(error.isEmpty() ? QStringLiteral("Failed to write raw Xray config") : error);
     }
-    configFile_->flush();
+    if (!configFile_->flush()) {
+        const auto error = configFile_->errorString();
+        cleanupTempFile();
+        return makeError(error.isEmpty() ? QStringLiteral("Failed to flush raw Xray config") : error);
+    }
+    configFile_->close();
 
     auto started = backend_->start(configFile_->fileName(), validationTimeoutMs);
     if (!started.ok) {
@@ -66,7 +77,7 @@ XrayProfileSession::StartResult XrayProfileSession::start(const QByteArray &rawJ
 XrayBackend::OperationResult XrayProfileSession::stop(int terminateTimeoutMs, int killTimeoutMs) {
     Q_ASSERT(thread() == QThread::currentThread());
     auto result = backend_->stop(terminateTimeoutMs, killTimeoutMs);
-    cleanupTempFile();
+    if (!backend_->isRunning()) cleanupTempFile();
     return result;
 }
 

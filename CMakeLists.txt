@@ -373,11 +373,11 @@ if (BUILD_TESTING)
             fmt/Bean2External.cpp
             fmt/Bean2Link.cpp
             sys/XrayRawProfile.cpp
-            sys/linux/LinuxCap.cpp
+            ${PLATFORM_SOURCES}
             3rdparty/base64.cpp
     )
     target_include_directories(test_xray_profile_guard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(test_xray_profile_guard PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Test)
+    target_link_libraries(test_xray_profile_guard PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Test ${PLATFORM_LIBRARIES})
     set_property(TARGET test_xray_profile_guard PROPERTY AUTOMOC ON)
     add_test(NAME xray_profile_guard COMMAND test_xray_profile_guard)
     set_tests_properties(xray_profile_guard PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

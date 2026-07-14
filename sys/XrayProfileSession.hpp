@@ -18,6 +18,7 @@ public:
     };
 
     explicit XrayProfileSession(QString binaryPath, QObject *parent = nullptr);
+    XrayProfileSession(QString binaryPath, QString tempDirectoryTemplate, QObject *parent = nullptr);
     ~XrayProfileSession() override;
 
     StartResult start(const QByteArray &rawJsonUtf8, int validationTimeoutMs = 5000);
@@ -38,6 +39,7 @@ private:
     StartResult makeError(const QString &error);
 
     QString binaryPath_;
+    QString tempDirectoryTemplate_;
     QScopedPointer<XrayBackend> backend_;
     QScopedPointer<QTemporaryFile> configFile_;
 };

@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QThread>
+#include <QTimer>
 
 #ifdef Q_OS_UNIX
 #include <csignal>
@@ -48,7 +49,8 @@ int main(int argc, char **argv) {
         out.flush();
         err << "runtime stderr\n";
         err.flush();
-        if (data.contains("crash")) return 42;
+        if (data.contains("immediate-crash")) { QTimer::singleShot(0, &app, [] { QCoreApplication::exit(43); }); return app.exec(); }
+        if (data.contains("crash") && !data.contains("immediate-crash")) return 42;
 #ifdef Q_OS_UNIX
         if (data.contains("ignore-terminate")) {
             std::signal(SIGTERM, SIG_IGN);

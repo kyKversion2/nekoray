@@ -348,6 +348,8 @@ void MainWindow::neko_start(int _id) {
             QSemaphore startSem;
             bool ok = false;
             QString error;
+            NekoGui_sys::XrayProfileSession *startedSession = nullptr;
+            int startedGeneration = 0;
             runOnUiThread([&] {
                 if (xray_profile_session != nullptr) {
                     xray_profile_session->stop();
@@ -355,6 +357,7 @@ void MainWindow::neko_start(int _id) {
                     xray_profile_session = nullptr;
                 }
                 auto session = new NekoGui_sys::XrayProfileSession(binaryPath);
+                const int sessionGeneration = ++xray_profile_session_generation;
                 xray_profile_session = session;
                 connect(session, &NekoGui_sys::XrayProfileSession::stdoutReceived, this, [](const QByteArray &data) {
                     MW_show_log_ext("Xray", QString::fromUtf8(data).trimmed());
@@ -363,9 +366,10 @@ void MainWindow::neko_start(int _id) {
                     MW_show_log_ext("Xray stderr", QString::fromUtf8(data).trimmed());
                 }, Qt::QueuedConnection);
                 connect(session, &NekoGui_sys::XrayProfileSession::crashed, this, [=](int exitCode, QProcess::ExitStatus exitStatus) {
-                    if (xray_profile_session != session) return;
+                    if (!NekoGui_sys::ShouldCommitXrayStart(xray_profile_session, session, xray_profile_session_generation, sessionGeneration, true)) return;
                     MW_show_log(QStringLiteral("[Xray] crashed: exitCode=%1 exitStatus=%2").arg(exitCode).arg(exitStatus));
                     xray_profile_session = nullptr;
+                    ++xray_profile_session_generation;
                     session->deleteLater();
                     const int oldId = NekoGui::dataStore->started_id;
                     NekoGui::dataStore->UpdateStartedId(-1919);
@@ -376,6 +380,7 @@ void MainWindow::neko_start(int _id) {
                 auto r = session->start(ent->CustomBean()->config_simple.toUtf8());
                 ok = r.ok;
                 error = r.error;
+                if (ok) { startedSession = session; startedGeneration = sessionGeneration; }
                 if (!ok) {
                     delete session;
                     if (xray_profile_session == session) xray_profile_session = nullptr;
@@ -390,13 +395,18 @@ void MainWindow::neko_start(int _id) {
                 return;
             }
 
-            NekoGui::dataStore->UpdateStartedId(ent->id);
-            running = ent;
             runOnUiThread([=] {
+                if (!NekoGui_sys::ShouldCommitXrayStart(xray_profile_session, startedSession, xray_profile_session_generation, startedGeneration, startedSession != nullptr && startedSession->isRunning())) {
+                    MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->bean->DisplayTypeAndName()));
+                    mu_starting.unlock();
+                    return;
+                }
+                NekoGui::dataStore->UpdateStartedId(ent->id);
+                running = ent;
                 refresh_status();
                 refresh_proxy_list(ent->id);
+                mu_starting.unlock();
             });
-            mu_starting.unlock();
         });
         return;
     }
@@ -526,11 +536,15 @@ void MainWindow::neko_stop(bool crash, bool sem) {
             QString error;
             runOnUiThread([&] {
                 if (xray_profile_session != nullptr) {
-                    auto result = xray_profile_session->stop();
+                    auto session = xray_profile_session;
+                    ++xray_profile_session_generation;
+                    auto result = session->stop();
                     ok = result.ok;
                     error = result.error;
-                    delete xray_profile_session;
-                    xray_profile_session = nullptr;
+                    if (!session->isRunning()) {
+                        if (xray_profile_session == session) xray_profile_session = nullptr;
+                        delete session;
+                    }
                 }
                 stopSem.release();
             }, DS_cores);
