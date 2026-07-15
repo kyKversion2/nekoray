@@ -7,6 +7,8 @@
 #include "sub/GroupUpdater.hpp"
 #include "sys/ExternalProcess.hpp"
 #include "sys/AutoRun.hpp"
+#include "sys/XrayRawProfile.hpp"
+#include "fmt/CustomBean.hpp"
 
 #include "ui/ThemeManager.hpp"
 #include "ui/Icon.hpp"
@@ -714,6 +716,11 @@ void MainWindow::on_menu_exit_triggered() {
     return;
 
 void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
+    if (enable && running != nullptr && NekoGui_sys::IsXrayRawProfile(running)) {
+        MessageBoxWarning(software_name, tr("Raw Xray profile does not support Nekoray TUN/system proxy integration yet."));
+        refresh_status();
+        return;
+    }
     if (enable != NekoGui::dataStore->spmode_system_proxy) {
         if (enable) {
             auto socks_port = NekoGui::dataStore->inbound_socks_port;
@@ -737,6 +744,11 @@ void MainWindow::neko_set_spmode_system_proxy(bool enable, bool save) {
 }
 
 void MainWindow::neko_set_spmode_vpn(bool enable, bool save) {
+    if (enable && running != nullptr && NekoGui_sys::IsXrayRawProfile(running)) {
+        MessageBoxWarning(software_name, tr("Raw Xray profile does not support Nekoray TUN/system proxy integration yet."));
+        refresh_status();
+        return;
+    }
     if (enable != NekoGui::dataStore->spmode_vpn) {
         if (enable) {
             if (NekoGui::dataStore->vpn_internal_tun) {
@@ -1205,6 +1217,11 @@ void MainWindow::on_menu_export_config_triggered() {
     auto ents = get_now_selected_list();
     if (ents.count() != 1) return;
     auto ent = ents.first();
+    if (NekoGui_sys::IsXrayRawProfile(ent)) {
+        QApplication::clipboard()->setText(ent->CustomBean()->config_simple);
+        QMessageBox::information(this, tr("Config copied"), tr("Config copied"));
+        return;
+    }
     if (ent->bean->DisplayCoreType() != software_core_name) return;
 
     auto result = BuildConfig(ent, false, true);

@@ -164,6 +164,8 @@ set(PROJECT_SOURCES
         sys/ExternalProcess.cpp
         sys/XrayCoreRunner.cpp
         sys/XrayBackend.cpp
+        sys/XrayProfileSession.cpp
+        sys/XrayRawProfile.cpp
         sys/AutoRun.cpp
 
         ui/ThemeManager.cpp
@@ -343,4 +345,51 @@ if (BUILD_TESTING)
     set_tests_properties(xray_backend PROPERTIES
             ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
     )
+
+    add_executable(test_xray_profile_session
+            tests/test_xray_profile_session.cpp
+            sys/XrayProfileSession.cpp
+            sys/XrayBackend.cpp
+            sys/XrayCoreRunner.cpp
+    )
+    target_include_directories(test_xray_profile_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_xray_profile_session PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
+    set_property(TARGET test_xray_profile_session PROPERTY AUTOMOC ON)
+    add_dependencies(test_xray_profile_session fake_xray)
+    add_test(NAME xray_profile_session COMMAND test_xray_profile_session)
+    set_tests_properties(xray_profile_session PROPERTIES
+            ENVIRONMENT "FAKE_XRAY_PATH=$<TARGET_FILE:fake_xray>;XRAY_FIXTURE_DIR=${XRAY_TEST_FIXTURE_DIR}"
+    )
+
+    add_executable(test_xray_profile_guard
+            tests/test_xray_profile_guard.cpp
+            db/ConfigBuilder.cpp
+            db/Database.cpp
+            db/traffic/TrafficData.hpp
+            main/NekoGui.cpp
+            main/NekoGui_Utils.cpp
+            fmt/AbstractBean.cpp
+            fmt/Bean2CoreObj_box.cpp
+            fmt/Bean2External.cpp
+            fmt/Bean2Link.cpp
+            sys/XrayRawProfile.cpp
+            ${PLATFORM_SOURCES}
+            3rdparty/base64.cpp
+    )
+    target_include_directories(test_xray_profile_guard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_xray_profile_guard PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Test ${PLATFORM_LIBRARIES})
+    set_property(TARGET test_xray_profile_guard PROPERTY AUTOMOC ON)
+
+    # Build this test in an isolated runtime directory with the geo assets that
+    # BuildConfigSingBox requires to exist beside the application executable.
+    set(XRAY_PROFILE_GUARD_RUNTIME_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests/xray_profile_guard_runtime")
+    set_target_properties(test_xray_profile_guard PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${XRAY_PROFILE_GUARD_RUNTIME_DIR}"
+    )
+    file(MAKE_DIRECTORY "${XRAY_PROFILE_GUARD_RUNTIME_DIR}")
+    file(WRITE "${XRAY_PROFILE_GUARD_RUNTIME_DIR}/geoip.db" "")
+    file(WRITE "${XRAY_PROFILE_GUARD_RUNTIME_DIR}/geosite.db" "")
+
+    add_test(NAME xray_profile_guard COMMAND test_xray_profile_guard)
+    set_tests_properties(xray_profile_guard PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif ()

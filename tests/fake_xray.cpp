@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QThread>
+#include <QTimer>
 
 #ifdef Q_OS_UNIX
 #include <csignal>
@@ -43,10 +44,13 @@ int main(int argc, char **argv) {
         }
         const auto data = f.readAll();
         out << "runtime ready\n";
+        if (data.contains("\"futureUnknownField\":{\"nested\":[1,2,3]}")) out << "raw field preserved\n";
+        if (data.contains("print-config-path-for-test")) out << "config path: " << args.at(configIndex + 1) << "\n";
         out.flush();
         err << "runtime stderr\n";
         err.flush();
-        if (data.contains("crash")) return 42;
+        if (data.contains("immediate-crash")) { QTimer::singleShot(0, &app, [] { QCoreApplication::exit(43); }); return app.exec(); }
+        if (data.contains("crash") && !data.contains("immediate-crash")) return 42;
 #ifdef Q_OS_UNIX
         if (data.contains("ignore-terminate")) {
             std::signal(SIGTERM, SIG_IGN);

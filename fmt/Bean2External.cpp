@@ -1,5 +1,6 @@
 #include "db/ProxyEntity.hpp"
 #include "fmt/includes.h"
+#include "sys/XrayRawProfile.hpp"
 
 #include <QFile>
 #include <QDir>
@@ -60,7 +61,7 @@ namespace NekoGui_fmt {
     }
 
     int CustomBean::NeedExternal(bool isFirstProfile) {
-        if (core == "internal" || core == "internal-full") return 0;
+        if (core == "internal" || core == "internal-full" || core == NekoGui_sys::XrayRawProfileCoreId) return 0;
         return 1;
     }
 

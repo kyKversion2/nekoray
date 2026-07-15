@@ -2,6 +2,7 @@
 #include "db/Database.hpp"
 #include "fmt/includes.h"
 #include "fmt/Preset.hpp"
+#include "sys/XrayRawProfile.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -78,6 +79,10 @@ namespace NekoGui {
         status->forTest = forTest;
         status->forExport = forExport;
 
+        if (NekoGui_sys::IsXrayRawProfile(ent)) {
+            result->error = QStringLiteral("Raw Xray profile must be started by the Xray runtime");
+            return result;
+        }
         auto customBean = dynamic_cast<NekoGui_fmt::CustomBean *>(ent->bean.get());
         if (customBean != nullptr && customBean->core == "internal-full") {
             result->coreConfig = QString2QJsonObject(customBean->config_simple);
@@ -233,6 +238,11 @@ namespace NekoGui {
                 // index == 0 means last profile in chain / not chain
                 chainTagOut = tagOut;
                 status->result->outboundStat = ent->traffic_data;
+            }
+
+            if (NekoGui_sys::IsXrayRawProfile(ent)) {
+                status->result->error = QStringLiteral("Raw Xray profile cannot be used in sing-box chains");
+                return {};
             }
 
             // chain rules: this
